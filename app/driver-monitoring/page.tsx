@@ -13,8 +13,6 @@ declare global {
         tmPose: any;
         Chart: any;
         jspdf: any;
-        speechSynthesis: any;
-        SpeechSynthesisUtterance: any;
     }
 }
 
@@ -439,7 +437,7 @@ export default function DriverMonitoring() {
             <div className="flex flex-wrap gap-4 mb-8">
                 <button
                     className={`px-6 py-3 rounded-full font-bold shadow-lg transition-transform active:scale-95 text-[#0f1724] ${!isTmLoaded ? 'bg-slate-500 cursor-not-allowed text-white' :
-                            isMonitoring ? 'bg-green-500 text-white cursor-default' : 'bg-[#ffb703] hover:bg-[#ffd166] hover:scale-105'
+                        isMonitoring ? 'bg-green-500 text-white cursor-default' : 'bg-[#ffb703] hover:bg-[#ffd166] hover:scale-105'
                         }`}
                     onClick={startMonitoring}
                     disabled={isMonitoring || !isTmLoaded}
