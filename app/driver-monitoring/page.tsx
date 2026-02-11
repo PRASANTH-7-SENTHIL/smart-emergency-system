@@ -5,6 +5,7 @@ import Script from 'next/script';
 import { useRouter } from 'next/navigation';
 
 import { useTheme } from "@/context/ThemeContext";
+import { MouseSpotlight } from "@/components/MouseSpotlight";
 
 
 // Declare globals for the external scripts
@@ -273,9 +274,56 @@ export default function DriverMonitoring() {
         }
     };
 
+    const getCurrentLocation = (): Promise<{ lat: number; lng: number } | null> => {
+        return new Promise((resolve) => {
+            if (!navigator.geolocation) {
+                console.warn("Geolocation not supported");
+                resolve(null);
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    resolve({
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    });
+                },
+                (error) => {
+                    console.error("Error getting location:", error);
+                    resolve(null);
+                }
+            );
+        });
+    };
+
+    const sendWebhookAlert = async (lat: number, lng: number) => {
+        try {
+            await fetch('https://sandhiyas.app.n8n.cloud/webhook-test/gps-alert', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    alert_type: "DROWSINESS_DETECTED",
+                    timestamp: new Date().toISOString(),
+                    latitude: lat,
+                    longitude: lng,
+                    driver_status: "SLEEPING"
+                })
+            });
+            console.log("Webhook alert sent with GPS:", { lat, lng });
+        } catch (error) {
+            console.error("Error sending webhook:", error);
+        }
+    };
+
     const sendSleepAlertSMS = async () => {
-        setNotificationMsg("🚨 CRITICAL: Sleep alert! Sending SMS...");
+        setNotificationMsg("🚨 CRITICAL: Sleep alert! Sending SMS & GPS...");
         setNotificationClass("notification-status notification-sent");
+
+        // Trigger GPS Webhook
+        const location = await getCurrentLocation();
+        if (location) {
+            sendWebhookAlert(location.lat, location.lng);
+        }
 
         try {
             const response = await fetch('/api/driver-status', {
@@ -288,7 +336,7 @@ export default function DriverMonitoring() {
             });
 
             if (response.ok) {
-                setNotificationMsg("✅ SMS Alert sent successfully!");
+                setNotificationMsg("✅ SMS & GPS Alert sent successfully!");
             } else {
                 setNotificationMsg("❌ Failed to send SMS alert.");
             }
@@ -353,7 +401,7 @@ export default function DriverMonitoring() {
 
         try {
             const prompt = createPrompt();
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -407,120 +455,142 @@ export default function DriverMonitoring() {
     };
 
     return (
-        <div className="min-h-screen bg-[#08338a] text-white p-4 md:p-8 font-sans transition-colors duration-300">
-            <Script
-                src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"
-                strategy="afterInteractive"
-            />
-            <Script
-                src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"
-                strategy="afterInteractive"
-                onLoad={() => {
-                    setIsTmLoaded(true);
-                    setStatus("AI Ready - Click Start");
-                }}
-            />
-            <Script src="https://cdn.jsdelivr.net/npm/chart.js" />
-            <Script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" />
+        <MouseSpotlight>
+            <div className="min-h-screen bg-transparent text-white p-4 md:p-8 font-sans transition-colors duration-300 relative z-10">
+                <Script
+                    src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"
+                    strategy="afterInteractive"
+                />
+                <Script
+                    src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"
+                    strategy="afterInteractive"
+                    onLoad={() => {
+                        setIsTmLoaded(true);
+                        setStatus("AI Ready - Click Start");
+                    }}
+                />
+                <Script src="https://cdn.jsdelivr.net/npm/chart.js" />
+                <Script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" />
 
-            <button
-                className="mb-6 px-4 py-2 bg-[#557c9e] rounded-lg text-white hover:bg-[#4a6b8a] transition shadow-sm font-medium flex items-center gap-2 border-none"
-                onClick={() => router.push('/')}
-            >
-                ← Back to Dashboard
-            </button>
-
-            <h1 className="text-3xl font-bold text-[#ffb703] mb-8 text-center md:text-left">
-                🚗 Driver Action Monitor
-            </h1>
-
-            <div className="flex flex-wrap gap-4 mb-8">
-                <button
-                    className={`px-6 py-3 rounded-full font-bold shadow-lg transition-transform active:scale-95 text-[#0f1724] ${!isTmLoaded ? 'bg-slate-500 cursor-not-allowed text-white' :
-                        isMonitoring ? 'bg-green-500 text-white cursor-default' : 'bg-[#ffb703] hover:bg-[#ffd166] hover:scale-105'
-                        }`}
-                    onClick={startMonitoring}
-                    disabled={isMonitoring || !isTmLoaded}
-                >
-                    {!isTmLoaded ? "Loading AI..." : isMonitoring ? "Monitoring Active" : "Start Monitoring"}
-                </button>
-                <button
-                    className={`px-6 py-3 rounded-full font-bold text-white shadow-lg transition-transform active:scale-95 bg-red-500 hover:bg-red-600 ${!isMonitoring ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    onClick={stopMonitoring}
-                    disabled={!isMonitoring}
-                >
-                    Stop Monitoring
-                </button>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                {/* Camera Section */}
-                <div className="bg-[#1e293b] rounded-2xl shadow-xl p-6 flex flex-col items-center">
-                    <div className="relative w-full max-w-[400px] aspect-square bg-[#0f1724] rounded-xl overflow-hidden mb-4 border-2 border-[#ffb703]">
-                        <canvas id="canvas" className="w-full h-full object-cover"></canvas>
+                <div className="flex justify-between items-center mb-6">
+                    <button
+                        className="px-4 py-2 bg-white/10 backdrop-blur-md rounded-lg text-white hover:bg-white/20 transition shadow-sm font-medium flex items-center gap-2 border border-white/10"
+                        onClick={() => router.push('/')}
+                    >
+                        ← Back to Dashboard
+                    </button>
+                    <div className="text-sm text-white/50 bg-white/5 px-3 py-1 rounded-full backdrop-blur-sm border border-white/5">
+                        AI-Powered Safety System
                     </div>
+                </div>
 
-                    <div id="label-container" ref={labelContainerRef} className="w-full flex flex-wrap justify-center gap-2 mb-4 text-sm font-medium text-white"></div>
+                <h1 className="text-4xl font-extrabold text-[#ffb703] mb-8 text-center md:text-left drop-shadow-lg tracking-tight">
+                    🚗 Driver Action Monitor
+                </h1>
 
-                    <div className={`w-full py-3 px-6 rounded-xl text-center font-bold text-lg mb-2 transition-colors ${statusClass === 'safe' ? 'bg-[#0f1724] text-lime-400' :
-                        statusClass === 'alert' ? 'bg-red-900/50 text-red-500 animate-pulse' :
-                            'bg-[#0f1724] text-slate-300'
-                        }`}>
-                        {status}
-                    </div>
+                <div className="flex flex-wrap gap-4 mb-8 justify-center md:justify-start">
+                    <button
+                        className={`px-8 py-4 rounded-full font-bold shadow-lg transition-all active:scale-95 text-[#0f1724] transform hover:-translate-y-1 ${!isTmLoaded ? 'bg-slate-500/50 cursor-not-allowed text-white backdrop-blur-sm' :
+                            isMonitoring ? 'bg-green-500 text-white cursor-default shadow-green-500/50' : 'bg-[#ffb703] hover:bg-[#ffd166] shadow-yellow-500/50'
+                            }`}
+                        onClick={startMonitoring}
+                        disabled={isMonitoring || !isTmLoaded}
+                    >
+                        {!isTmLoaded ? "Loading AI..." : isMonitoring ? "Monitoring Active" : "Start Monitoring"}
+                    </button>
+                    <button
+                        className={`px-8 py-4 rounded-full font-bold text-white shadow-lg transition-all active:scale-95 bg-red-500/80 backdrop-blur-md hover:bg-red-600 border border-red-400/30 transform hover:-translate-y-1 ${!isMonitoring ? 'opacity-50 cursor-not-allowed' : 'shadow-red-500/50'}`}
+                        onClick={stopMonitoring}
+                        disabled={!isMonitoring}
+                    >
+                        Stop Monitoring
+                    </button>
+                </div>
 
-                    {notificationMsg && (
-                        <div className={`w-full py-2 px-4 rounded-lg text-center text-sm font-medium ${notificationMsg.includes("Alert") ? 'bg-orange-900/50 text-orange-400' : 'bg-blue-900/50 text-blue-400'
-                            }`}>
-                            {notificationMsg}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                    {/* Camera Section */}
+                    <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-6 flex flex-col items-center relative overflow-hidden group">
+                        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                        <div className="relative w-full max-w-[400px] aspect-square bg-black/40 rounded-xl overflow-hidden mb-6 border-2 border-[#ffb703]/50 shadow-[0_0_20px_rgba(255,183,3,0.3)]">
+                            <canvas id="canvas" className="w-full h-full object-cover"></canvas>
+                            {!isMonitoring && (
+                                <div className="absolute inset-0 flex items-center justify-center text-white/30 font-medium">
+                                    Camera Offline
+                                </div>
+                            )}
                         </div>
-                    )}
+
+                        <div id="label-container" ref={labelContainerRef} className="w-full flex flex-wrap justify-center gap-2 mb-4 text-sm font-medium text-white/80"></div>
+
+                        <div className={`w-full py-4 px-6 rounded-xl text-center font-bold text-lg mb-4 transition-all duration-300 border ${statusClass === 'safe' ? 'bg-lime-900/30 text-lime-400 border-lime-500/30 shadow-[0_0_15px_rgba(132,204,22,0.2)]' :
+                            statusClass === 'alert' ? 'bg-red-900/30 text-red-500 animate-pulse border-red-500/50 shadow-[0_0_20px_rgba(239,68,68,0.4)]' :
+                                'bg-slate-800/50 text-slate-300 border-slate-700/50'
+                            }`}>
+                            {status}
+                        </div>
+
+                        {notificationMsg && (
+                            <div className={`w-full py-2 px-4 rounded-lg text-center text-sm font-medium backdrop-blur-md border ${notificationMsg.includes("Alert") ? 'bg-orange-900/40 text-orange-300 border-orange-500/30' : 'bg-blue-900/40 text-blue-300 border-blue-500/30'
+                                }`}>
+                                {notificationMsg}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Graph Section */}
+                    <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-6 relative overflow-hidden group">
+                        <div className="absolute inset-0 bg-gradient-to-tl from-cyan-500/5 to-indigo-500/5 opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                        <h2 className="text-xl font-bold text-[#ffb703] mb-4 relative z-10 flex items-center gap-2">
+                            <span className="w-2 h-8 bg-[#ffb703] rounded-full"></span>
+                            Driver Behavior Over Time
+                        </h2>
+                        <div className="h-[350px] w-full bg-black/20 rounded-xl p-4 border border-white/5 relative z-10">
+                            <canvas id="data-graph"></canvas>
+                        </div>
+                    </div>
                 </div>
 
-                {/* Graph Section */}
-                <div className="bg-[#1e293b] rounded-2xl shadow-xl p-6">
-                    <h2 className="text-xl font-bold text-[#ffb703] mb-4">Driver Behavior Over Time</h2>
-                    <div className="h-[300px] w-full bg-[#0f1724] rounded-lg p-2">
-                        <canvas id="data-graph"></canvas>
+                {/* Counters */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                    {[
+                        { label: 'Normal Analysis', count: counts.normal, color: 'text-lime-400', border: 'border-lime-500/20', bg: 'bg-lime-500/5' },
+                        { label: 'Sleep Alerts', count: counts.sleep, color: 'text-red-500', border: 'border-red-500/20', bg: 'bg-red-500/5' },
+                        { label: 'Left Look', count: counts.left, color: 'text-orange-400', border: 'border-orange-500/20', bg: 'bg-orange-500/5' },
+                        { label: 'Right Look', count: counts.right, color: 'text-yellow-400', border: 'border-yellow-500/20', bg: 'bg-yellow-500/5' },
+                    ].map((item, idx) => (
+                        <div key={idx} className={`backdrop-blur-lg border ${item.border} ${item.bg} p-6 rounded-2xl shadow-lg text-center transition hover:scale-105 duration-300`}>
+                            <div className="text-slate-400 font-medium mb-2 text-sm uppercase tracking-wider">{item.label}</div>
+                            <div className={`text-4xl font-black ${item.color} drop-shadow-sm`}>{item.count}</div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Reports Section */}
+                <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-8 mb-8 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-purple-600/10 blur-[100px] rounded-full pointer-events-none"></div>
+
+                    <div className="flex flex-wrap gap-4 mb-8 justify-center relative z-10">
+                        <button className="px-6 py-3 bg-[#ffb703] text-[#0f1724] hover:bg-[#ffd166] rounded-full font-bold transition shadow-lg hover:shadow-yellow-500/20 active:scale-95 flex items-center gap-2" onClick={downloadData}>
+                            <span>⬇</span> Download JSON
+                        </button>
+                        <button className="px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-500 hover:to-indigo-500 rounded-full font-bold transition shadow-lg hover:shadow-purple-500/30 active:scale-95 flex items-center gap-2" onClick={generateReport}>
+                            <span>✨</span> Generate Gemini Report
+                        </button>
+                        <button className="px-6 py-3 bg-slate-700 text-white hover:bg-slate-600 rounded-full font-bold transition shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2" onClick={downloadPDF} disabled={!pdfReady}>
+                            <span>📄</span> Download PDF
+                        </button>
+                    </div>
+
+                    <div className="bg-black/30 rounded-xl p-6 border border-white/10 backdrop-blur-sm relative z-10">
+                        <h2 className="text-xl font-bold text-[#ffb703] mb-4 flex items-center gap-2">
+                            <span>🤖</span> Gemini AI Analysis Report
+                        </h2>
+                        <div className="whitespace-pre-wrap text-slate-300 leading-relaxed font-mono text-sm max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent pr-2">
+                            {geminiReport}
+                        </div>
                     </div>
                 </div>
             </div>
-
-            {/* Counters */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                <div className="bg-[#1e293b] p-6 rounded-xl shadow-md text-center border-none">
-                    <div className="text-slate-400 font-medium mb-2">Normal Analysis</div>
-                    <div className="text-4xl font-bold text-lime-400">{counts.normal}</div>
-                </div>
-                <div className="bg-[#1e293b] p-6 rounded-xl shadow-md text-center border-none">
-                    <div className="text-slate-400 font-medium mb-2">Sleep Alerts</div>
-                    <div className="text-4xl font-bold text-red-500">{counts.sleep}</div>
-                </div>
-                <div className="bg-[#1e293b] p-6 rounded-xl shadow-md text-center border-none">
-                    <div className="text-slate-400 font-medium mb-2">Left Look</div>
-                    <div className="text-4xl font-bold text-orange-400">{counts.left}</div>
-                </div>
-                <div className="bg-[#1e293b] p-6 rounded-xl shadow-md text-center border-none">
-                    <div className="text-slate-400 font-medium mb-2">Right Look</div>
-                    <div className="text-4xl font-bold text-yellow-400">{counts.right}</div>
-                </div>
-            </div>
-
-            {/* Reports Section */}
-            <div className="bg-[#1e293b] rounded-2xl shadow-xl p-6 mb-8">
-                <div className="flex flex-wrap gap-4 mb-6 justify-center">
-                    <button className="px-6 py-2 bg-[#ffb703] text-[#0f1724] hover:bg-[#ffd166] rounded-full font-bold transition shadow-md" onClick={downloadData}>Download JSON</button>
-                    <button className="px-6 py-2 bg-purple-600 text-white hover:bg-purple-700 rounded-full font-bold transition shadow-md" onClick={generateReport}>Generate Gemini Report</button>
-                    <button className="px-6 py-2 bg-slate-700 text-white hover:bg-slate-600 rounded-full font-bold transition shadow-md disabled:opacity-50" onClick={downloadPDF} disabled={!pdfReady}>Download PDF</button>
-                </div>
-
-                <div className="bg-[#0f1724] rounded-xl p-6 border border-slate-700/50">
-                    <h2 className="text-xl font-bold text-[#ffb703] mb-4">Gemini AI Analysis Report</h2>
-                    <div className="whitespace-pre-wrap text-slate-300 leading-relaxed font-mono text-sm max-h-[300px] overflow-y-auto">
-                        {geminiReport}
-                    </div>
-                </div>
-            </div>
-        </div>
+        </MouseSpotlight>
     );
 }

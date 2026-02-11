@@ -1,13 +1,19 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { CloudRain, Wind, Droplets, Thermometer, Map as MapIcon, RefreshCw } from 'lucide-react';
 import Script from 'next/script';
 import { useLanguage } from '@/context/LanguageContext';
 
+declare global {
+    interface Window {
+        google: any;
+    }
+}
 
 export default function WeatherSensors() {
     const { t } = useLanguage();
+    const mapRef = useRef<HTMLDivElement>(null);
     const [sensors, setSensors] = useState({
         rain: 0,
         humidity: 65,
@@ -18,19 +24,53 @@ export default function WeatherSensors() {
 
     const [weatherData, setWeatherData] = useState<any>(null);
 
-    // Simulated ThingSpeak Fetch
+    // Map Init
+    useEffect(() => {
+        const initMap = () => {
+            if (mapRef.current && window.google?.maps) {
+                const location = { lat: 13.051786, lng: 80.210643 };
+                const map = new window.google.maps.Map(mapRef.current, {
+                    center: location,
+                    zoom: 15,
+                    disableDefaultUI: false,
+                });
+                new window.google.maps.Marker({
+                    position: location,
+                    map: map,
+                    title: "Sensor Location"
+                });
+            }
+        };
+
+        if (window.google?.maps) {
+            initMap();
+        } else {
+            // Assign to window for callback if needed, or rely on interval/effect re-run
+            (window as any).initSensorMap = initMap;
+        }
+    }, []);
+
+    // Real ThingSpeak Fetch
     const fetchSensorData = async () => {
         setLoading(true);
-        // Simulate delay and random data change
-        setTimeout(() => {
-            setSensors(prev => ({
-                rain: Math.random() > 0.8 ? Math.floor(Math.random() * 20) : 0, // Mostly 0 rain
-                humidity: Math.floor(50 + Math.random() * 30),
-                airQuality: Math.floor(30 + Math.random() * 50),
-                temperature: Math.floor(25 + Math.random() * 10),
-            }));
+        try {
+            const response = await fetch("https://api.thingspeak.com/channels/3250094/feeds.json?api_key=KRQH66R2LN11F7GX&results=1");
+            const data = await response.json();
+
+            if (data.feeds && data.feeds.length > 0) {
+                const feed = data.feeds[0];
+                setSensors({
+                    rain: parseFloat(feed.field1) || 0,
+                    temperature: parseFloat(feed.field2) || 0,
+                    airQuality: parseFloat(feed.field3) || 0,
+                    humidity: parseFloat(feed.field4) || 0
+                });
+            }
+        } catch (error) {
+            console.error("Error fetching ThingSpeak data:", error);
+        } finally {
             setLoading(false);
-        }, 1000);
+        }
     };
 
     const fetchRealWeather = async () => {
@@ -129,12 +169,10 @@ export default function WeatherSensors() {
                     </h3>
                     <div className="relative flex-1 bg-gray-100 dark:bg-gray-800 rounded-xl overflow-hidden min-h-[250px]">
                         <Script
-                            src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}`}
+                            src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&callback=initSensorMap`}
                             strategy="lazyOnload"
                         />
-                        <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
-                            {t('weather.mapPreview')}
-                        </div>
+                        <div ref={mapRef} className="w-full h-full min-h-[250px]" />
                     </div>
                 </div>
             </div>

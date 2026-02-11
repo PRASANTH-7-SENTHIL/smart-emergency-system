@@ -131,7 +131,38 @@ export default function AccidentSpot() {
                 </div>
 
                 <button
-                    onClick={() => setIsTracking(!isTracking)}
+                    onClick={() => {
+                        const newTrackingState = !isTracking;
+                        setIsTracking(newTrackingState);
+
+                        if (newTrackingState) {
+                            if (navigator.geolocation) {
+                                navigator.geolocation.getCurrentPosition(
+                                    (position) => {
+                                        const { latitude, longitude } = position.coords;
+                                        // Update local state
+                                        setCoords({ lat: latitude, lng: longitude });
+
+                                        // Send to Webhook
+                                        fetch('https://sandhiyas.app.n8n.cloud/webhook-test/gps-alert', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                                alert_type: "ACCIDENT_TRACKING_STARTED",
+                                                timestamp: new Date().toISOString(),
+                                                latitude,
+                                                longitude
+                                            })
+                                        }).then(() => console.log("Tracking started webhook sent"))
+                                            .catch(err => console.error("Webhook error", err));
+                                    },
+                                    (error) => console.error("Error getting location", error)
+                                );
+                            } else {
+                                alert("Geolocation is not supported by this browser.");
+                            }
+                        }
+                    }}
                     className={`
             px-6 py-3 rounded-full font-bold shadow-lg transition-all transform hover:scale-105
             ${isTracking

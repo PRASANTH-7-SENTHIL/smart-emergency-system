@@ -42,7 +42,7 @@ export async function POST(request: Request) {
             const text = response.text();
 
             return NextResponse.json({
-                response: `${prefix}: ${text}`
+                response: text
             });
         } catch (apiError: any) {
             console.error("Gemini API Error:", apiError);

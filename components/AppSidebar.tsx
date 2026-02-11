@@ -9,7 +9,7 @@ import {
     Newspaper,
     CloudRain,
     Gauge,
-    Camera,
+
     Settings,
     Menu,
     X,
@@ -35,12 +35,12 @@ export default function AppSidebar() {
         { name: t('sidebar.aiAssistant'), href: '/chat', icon: MessageSquare },
         { name: t('sidebar.dailyNews'), href: '/news', icon: Newspaper },
         { name: t('sidebar.weatherSensors'), href: '/weather', icon: CloudRain },
-      
-        { name: t('sidebar.accidentCapture'), href: '/accident-capture', icon: Camera },
+
+
         { name: t('sidebar.settings'), href: '/settings', icon: Settings },
         { name: t('sidebar.weatherStatus'), href: '/weather-status', icon: CloudRain },
     ];
-    
+
     return (
         <>
             {/* Mobile Menu Button */}
